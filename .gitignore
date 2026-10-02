@@ -1,0 +1,31 @@
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Packaging output
+*.egg-info/
+build/
+dist/
+
+# Coverage output
+.coverage
+.coverage.*
+htmlcov/
+
+# Local environments and IDE settings
+.venv/
+venv/
+.conda/
+.idea/
+.vscode/
+
+# Local configuration and expense data
+.env
+.env.*
+!.env.example
+/local-data/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
