@@ -6,7 +6,8 @@ desktop application will use PySide6 and SQLite.
 
 Stage 1 established the scaffold and placeholder entry point. Stage 2 adds an
 immutable expense model and an in-memory service for adding and listing expenses,
-with domain tests. There is no UI or database; the entry point remains a placeholder.
+with domain tests. Stage 3 adds interchangeable in-memory and SQLite repositories.
+There is no UI or application database wiring; the entry point remains a placeholder.
 
 ## Development environment
 
@@ -54,11 +55,12 @@ importable until packaging metadata is introduced in a later learning stage.
 - `src/pocketledger/__main__.py`: module entry point.
 - `src/pocketledger/ui/`: future PySide6 presentation code.
 - `src/pocketledger/domain/expense.py`: immutable expense model and validation.
-- `src/pocketledger/domain/expense_service.py`: in-memory add/list service.
-- `src/pocketledger/persistence/`: future SQLite data access.
+- `src/pocketledger/domain/expense_service.py`: add/list service with an injected repository.
+- `src/pocketledger/domain/expense_repository.py`: storage protocol and duplicate-ID error.
+- `src/pocketledger/persistence/`: in-memory and SQLite repository implementations.
 - `tests/`: entry-point smoke test and domain tests.
 
-`app.py` will coordinate the layers later. The UI and persistence packages are empty.
+`app.py` will coordinate the layers later. The UI package is empty.
 `local-data/` is reserved and ignored by Git for future local databases and
 exports; no stage so far creates it or any application data. Packaging metadata
 and dependency locking are deferred to later stages.
@@ -72,6 +74,26 @@ decimal precision is unrestricted. Dates must be `datetime.date` objects, exclud
 `datetime.datetime`; future dates are allowed. Unsupported types raise `TypeError`,
 and invalid values raise `ValueError`.
 
-Expenses cannot be edited. Each `ExpenseService` owns a separate in-memory list.
-Adding returns the validated expense; listing returns a copy in insertion order.
-Invalid additions leave the collection unchanged. Nothing is saved to disk.
+Expenses cannot be edited. Normal construction generates an ID; `Expense.restore(...)`
+accepts an existing UUID and reuses the same validation rules.
+
+## Repository boundary
+
+`ExpenseService(repository)` requires an object implementing the `ExpenseRepository`
+protocol: `add(expense)` and `list_expenses()`. The service validates new expenses
+before storage and returns them only after a successful addition. Repositories
+return fresh lists in insertion order and reject duplicate IDs with
+`DuplicateExpenseError`. In-memory repositories own separate collections; services
+can share a repository intentionally. The domain imports no SQLite or storage adapter.
+
+`SQLiteExpenseRepository(database_path)` owns its connection and creates the
+`expenses` table if needed. The caller supplies a path with an existing parent
+directory. Use it as a context manager or call `close()` explicitly. Successful
+additions are committed; failed additions are rolled back. UUIDs, Decimal amounts,
+and dates are stored as text and restored to their domain types, retaining identity
+and exact decimal precision. Invalid rows fail visibly; only duplicate-ID database
+errors are translated, and other database errors propagate.
+
+SQLite tests use pytest's `tmp_path` files outside the project, including reopening
+databases to verify persistence. The placeholder app does not create a database.
+There are no migrations, ORM dependencies, or hardcoded application database paths.

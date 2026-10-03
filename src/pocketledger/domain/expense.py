@@ -12,6 +12,17 @@ class Expense:
     date: date
     id: UUID = field(default_factory=uuid4, init=False)
 
+    @classmethod
+    def restore(
+        cls, *, id: UUID, description: str, amount: Decimal, category: str, date: date
+    ) -> "Expense":
+        """Reconstruct an existing expense using typed, validated values."""
+        if not isinstance(id, UUID):
+            raise TypeError("id must be a UUID")
+        expense = cls(description=description, amount=amount, category=category, date=date)
+        object.__setattr__(expense, "id", id)
+        return expense
+
     def __post_init__(self) -> None:
         for name in ("description", "category"):
             value = getattr(self, name)

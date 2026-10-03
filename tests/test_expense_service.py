@@ -5,6 +5,11 @@ import pytest
 
 from pocketledger.domain.expense import Expense
 from pocketledger.domain.expense_service import ExpenseService
+from pocketledger.persistence.in_memory_expense_repository import InMemoryExpenseRepository
+
+
+def make_service():
+    return ExpenseService(InMemoryExpenseRepository())
 
 
 def add_expense(service, description="Lunch", **overrides):
@@ -19,11 +24,11 @@ def add_expense(service, description="Lunch", **overrides):
 
 
 def test_service_starts_empty():
-    assert ExpenseService().list_expenses() == []
+    assert make_service().list_expenses() == []
 
 
 def test_add_returns_and_stores_validated_expense():
-    service = ExpenseService()
+    service = make_service()
     expense = add_expense(service, description="  Lunch  ", category="  Food  ")
 
     assert isinstance(expense, Expense)
@@ -33,7 +38,7 @@ def test_add_returns_and_stores_validated_expense():
 
 
 def test_multiple_expenses_have_distinct_ids_and_preserve_insertion_order():
-    service = ExpenseService()
+    service = make_service()
     first = add_expense(service)
     second = add_expense(service)
 
@@ -52,7 +57,7 @@ def test_multiple_expenses_have_distinct_ids_and_preserve_insertion_order():
     ],
 )
 def test_invalid_addition_leaves_existing_collection_unchanged(overrides, error):
-    service = ExpenseService()
+    service = make_service()
     existing = add_expense(service)
 
     with pytest.raises(error):
@@ -62,7 +67,7 @@ def test_invalid_addition_leaves_existing_collection_unchanged(overrides, error)
 
 
 def test_listing_returns_a_copy():
-    service = ExpenseService()
+    service = make_service()
     expense = add_expense(service)
     listed = service.list_expenses()
     listed.clear()
@@ -72,8 +77,36 @@ def test_listing_returns_a_copy():
 
 
 def test_service_instances_have_separate_collections():
-    first_service = ExpenseService()
-    second_service = ExpenseService()
+    first_service = make_service()
+    second_service = make_service()
     add_expense(first_service)
 
     assert second_service.list_expenses() == []
+
+
+def test_service_requires_repository():
+    with pytest.raises(TypeError):
+        ExpenseService()
+
+
+def test_services_can_share_an_injected_repository():
+    repository = InMemoryExpenseRepository()
+    first = ExpenseService(repository)
+    second = ExpenseService(repository)
+    expense = add_expense(first)
+    assert second.list_expenses() == [expense]
+
+
+def test_repository_failure_propagates_from_service():
+    class FailingRepository:
+        def add(self, expense):
+            raise RuntimeError("storage failed")
+
+        def list_expenses(self):
+            raise RuntimeError("storage failed")
+
+    service = ExpenseService(FailingRepository())
+    with pytest.raises(RuntimeError, match="storage failed"):
+        add_expense(service)
+    with pytest.raises(RuntimeError, match="storage failed"):
+        service.list_expenses()

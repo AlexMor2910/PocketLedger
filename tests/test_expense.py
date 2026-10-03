@@ -81,3 +81,37 @@ def test_expense_fields_are_immutable(field):
     expense = make_expense()
     with pytest.raises(FrozenInstanceError):
         setattr(expense, field, getattr(expense, field))
+
+
+def test_restore_preserves_identity_and_validates_and_normalizes_fields():
+    original = make_expense()
+    restored = Expense.restore(
+        id=original.id, description="  Lunch  ", amount=original.amount,
+        category="  Food  ", date=original.date,
+    )
+    assert restored == original
+    with pytest.raises(FrozenInstanceError):
+        restored.id = UUID(int=0)
+
+
+@pytest.mark.parametrize(
+    "overrides, error",
+    [
+        ({"id": "not-a-uuid"}, TypeError),
+        ({"description": " "}, ValueError),
+        ({"category": " "}, ValueError),
+        ({"amount": Decimal("NaN")}, ValueError),
+        ({"amount": Decimal("0")}, ValueError),
+        ({"amount": 1.25}, TypeError),
+        ({"date": datetime(2024, 2, 29)}, TypeError),
+    ],
+)
+def test_restore_rejects_invalid_fields(overrides, error):
+    original = make_expense()
+    fields = {
+        "id": original.id, "description": original.description,
+        "amount": original.amount, "category": original.category, "date": original.date,
+    }
+    fields.update(overrides)
+    with pytest.raises(error):
+        Expense.restore(**fields)
