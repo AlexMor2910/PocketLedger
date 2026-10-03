@@ -1,5 +1,7 @@
+from uuid import UUID
+
 from pocketledger.domain.expense import Expense
-from pocketledger.domain.expense_repository import DuplicateExpenseError
+from pocketledger.domain.expense_repository import DuplicateExpenseError, ExpenseNotFoundError
 
 
 class InMemoryExpenseRepository:
@@ -13,3 +15,10 @@ class InMemoryExpenseRepository:
 
     def list_expenses(self) -> list[Expense]:
         return self._expenses.copy()
+
+    def delete(self, expense_id: UUID) -> None:
+        for index, expense in enumerate(self._expenses):
+            if expense.id == expense_id:
+                del self._expenses[index]
+                return
+        raise ExpenseNotFoundError(f"Expense {expense_id} does not exist")

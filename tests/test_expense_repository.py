@@ -1,10 +1,12 @@
 from datetime import date
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 
 from pocketledger.domain.expense import Expense
 from pocketledger.domain.expense_repository import DuplicateExpenseError, ExpenseRepository
+from pocketledger.domain.expense_repository import ExpenseNotFoundError
 from pocketledger.persistence.in_memory_expense_repository import InMemoryExpenseRepository
 from pocketledger.persistence.sqlite_expense_repository import SQLiteExpenseRepository
 
@@ -57,3 +59,27 @@ def test_duplicate_id_is_rejected_without_changing_existing_expense(repository):
     next_expense = make_expense()
     repository.add(next_expense)
     assert repository.list_expenses() == [expense, next_expense]
+
+
+def test_delete_preserves_remaining_order_and_allows_more_additions(repository):
+    first, middle, last = make_expense(), make_expense(), make_expense()
+    for expense in (first, middle, last):
+        repository.add(expense)
+    assert repository.delete(middle.id) is None
+    assert repository.list_expenses() == [first, last]
+    additional = make_expense()
+    repository.add(additional)
+    assert repository.list_expenses() == [first, last, additional]
+
+
+def test_unknown_delete_leaves_collection_unchanged_and_repository_usable(repository):
+    existing = make_expense()
+    repository.add(existing)
+    with pytest.raises(ExpenseNotFoundError):
+        repository.delete(uuid4())
+    assert repository.list_expenses() == [existing]
+    repository.delete(existing.id)
+    assert repository.list_expenses() == []
+    with pytest.raises(ExpenseNotFoundError):
+        repository.delete(existing.id)
+    assert repository.list_expenses() == []

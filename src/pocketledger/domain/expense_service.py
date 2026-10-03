@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from uuid import UUID
 
 from pocketledger.domain.expense import Expense
 from pocketledger.domain.expense_repository import ExpenseRepository
@@ -20,3 +21,6 @@ class ExpenseService:
 
     def list_expenses(self) -> list[Expense]:
         return self._repository.list_expenses()
+
+    def delete_expense(self, expense_id: UUID) -> None:
+        self._repository.delete(expense_id)

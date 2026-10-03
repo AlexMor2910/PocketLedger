@@ -1,9 +1,11 @@
 from datetime import date
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 
 from pocketledger.domain.expense import Expense
+from pocketledger.domain.expense_repository import ExpenseNotFoundError
 from pocketledger.domain.expense_service import ExpenseService
 from pocketledger.persistence.in_memory_expense_repository import InMemoryExpenseRepository
 
@@ -110,3 +112,24 @@ def test_repository_failure_propagates_from_service():
         add_expense(service)
     with pytest.raises(RuntimeError, match="storage failed"):
         service.list_expenses()
+
+
+def test_deletion_delegates_uuid_to_repository():
+    class RecordingRepository:
+        def delete(self, expense_id):
+            self.deleted_id = expense_id
+
+    repository = RecordingRepository()
+    expense_id = uuid4()
+    assert ExpenseService(repository).delete_expense(expense_id) is None
+    assert repository.deleted_id == expense_id
+
+
+@pytest.mark.parametrize("error", [ExpenseNotFoundError("missing"), RuntimeError("failed")])
+def test_deletion_errors_propagate(error):
+    class FailingRepository:
+        def delete(self, expense_id):
+            raise error
+
+    with pytest.raises(type(error), match=str(error)):
+        ExpenseService(FailingRepository()).delete_expense(uuid4())

@@ -7,7 +7,9 @@ desktop application will use PySide6 and SQLite.
 Stage 1 established the scaffold and placeholder entry point. Stage 2 adds an
 immutable expense model and an in-memory service for adding and listing expenses,
 with domain tests. Stage 3 adds interchangeable in-memory and SQLite repositories.
-There is no UI or application database wiring; the entry point remains a placeholder.
+Stage 4 adds a terminal menu and wires the service to a local SQLite database.
+Stage 5 adds deletion by UUID through both repository implementations.
+There is no GUI.
 
 ## Development environment
 
@@ -34,36 +36,68 @@ python -c "import sys; print(sys.executable)"
 The interpreter should be inside `anaconda3\envs\PocketLedger` (or your own
 Conda installation's equivalent). Select the same interpreter in PyCharm.
 
-## Run the placeholder and tests
+## Run PocketLedger
 
 From the project root in the activated PowerShell terminal:
 
 ```powershell
 $env:PYTHONPATH = (Resolve-Path .\src).Path
 python -m pocketledger
-python -m pytest
 ```
 
-The app prints `PocketLedger scaffold` and exits successfully. The test launches
-the module with the same Python interpreter and checks its exit code and output.
 Set `PYTHONPATH` again in each new terminal session. This makes the `src` package
 importable until packaging metadata is introduced in a later learning stage.
 
+The menu offers **1. Add expense**, **2. List expenses**, **3. Delete expense**,
+and **4. Exit**. Adding asks for
+description, decimal amount (e.g. `12.50`), category, and a valid date in exactly
+`YYYY-MM-DD` format (e.g. `2026-10-02`). Invalid input displays an error and returns
+to the menu. Listing shows date, description, category, and amount in insertion
+order without rounding amounts. Future dates remain allowed. Exit, EOF, or Ctrl+C
+closes the application and its database connection.
+
+Deleting shows the current expenses as a numbered list in insertion order. Enter
+the number of the expense to delete; the CLI resolves that selection to its UUID
+and calls the service. UUIDs are not displayed or entered by the user. Invalid
+selections or an empty list show a message and return to the menu. If the expense
+has disappeared since listing, nothing is deleted and a not-found message is shown.
+Successful deletion prints `Expense deleted.` and persists across application runs.
+
+Run from the project root to use `local-data/pocketledger.sqlite`. The application
+creates this directory and database on startup; expenses persist across runs.
+The path is relative to the working directory, so launching elsewhere creates a
+separate `local-data/` there. The project's entire `local-data/` directory is ignored
+by Git. Editing expenses is outside this stage.
+
+## Run tests
+
+From the project root with Conda activated and `PYTHONPATH` set as above:
+
+```powershell
+python -m pytest
+```
+
+Tests use injected input/output functions rather than human input. SQLite and
+application tests use temporary directories and do not write to project local data.
+
 ## Structure
 
-- `src/pocketledger/app.py`: minimal startup function.
+- `src/pocketledger/app.py`: creates the data directory and wires repository, service, and CLI.
 - `src/pocketledger/__main__.py`: module entry point.
-- `src/pocketledger/ui/`: future PySide6 presentation code.
+- `src/pocketledger/ui/cli.py`: terminal menu, input conversion, and expense display.
 - `src/pocketledger/domain/expense.py`: immutable expense model and validation.
-- `src/pocketledger/domain/expense_service.py`: add/list service with an injected repository.
-- `src/pocketledger/domain/expense_repository.py`: storage protocol and duplicate-ID error.
+- `src/pocketledger/domain/expense_service.py`: add/list/delete service with an injected repository.
+- `src/pocketledger/domain/expense_repository.py`: storage protocol and shared repository errors.
 - `src/pocketledger/persistence/`: in-memory and SQLite repository implementations.
-- `tests/`: entry-point smoke test and domain tests.
+- `tests/`: domain, repository, CLI, application, and module entry-point tests.
 
-`app.py` will coordinate the layers later. The UI package is empty.
-`local-data/` is reserved and ignored by Git for future local databases and
-exports; no stage so far creates it or any application data. Packaging metadata
-and dependency locking are deferred to later stages.
+Application flow: `app.py` constructs `SQLiteExpenseRepository`, injects it into
+`ExpenseService`, and passes the service into `ExpenseCLI`. The CLI converts text
+into Decimal and date values, then calls the service. The service creates validated
+domain expenses and delegates storage to the repository. The CLI imports no SQLite,
+and the domain imports neither UI nor repository implementations. The app owns the
+repository lifetime through a context manager. Packaging metadata and dependency
+locking are deferred to later stages.
 
 ## Domain rules
 
@@ -80,20 +114,26 @@ accepts an existing UUID and reuses the same validation rules.
 ## Repository boundary
 
 `ExpenseService(repository)` requires an object implementing the `ExpenseRepository`
-protocol: `add(expense)` and `list_expenses()`. The service validates new expenses
+protocol: `add(expense)`, `list_expenses()`, and `delete(expense_id: UUID)`. The service validates new expenses
 before storage and returns them only after a successful addition. Repositories
 return fresh lists in insertion order and reject duplicate IDs with
 `DuplicateExpenseError`. In-memory repositories own separate collections; services
 can share a repository intentionally. The domain imports no SQLite or storage adapter.
 
+The service's `delete_expense(expense_id)` delegates directly to the repository.
+Both repositories delete by UUID, preserve remaining insertion order, and raise
+`ExpenseNotFoundError` if the ID is absent, leaving stored expenses unchanged.
+The numbered selection exists only in the CLI; it is never passed into storage.
+
 `SQLiteExpenseRepository(database_path)` owns its connection and creates the
 `expenses` table if needed. The caller supplies a path with an existing parent
 directory. Use it as a context manager or call `close()` explicitly. Successful
-additions are committed; failed additions are rolled back. UUIDs, Decimal amounts,
+additions and deletions are committed; failed operations are rolled back. UUIDs, Decimal amounts,
 and dates are stored as text and restored to their domain types, retaining identity
 and exact decimal precision. Invalid rows fail visibly; only duplicate-ID database
 errors are translated, and other database errors propagate.
 
 SQLite tests use pytest's `tmp_path` files outside the project, including reopening
-databases to verify persistence. The placeholder app does not create a database.
-There are no migrations, ORM dependencies, or hardcoded application database paths.
+databases to verify persistence. The repository itself still requires a caller-supplied
+path; only `app.py` chooses the application's local database location. There are no
+migrations or ORM dependencies.

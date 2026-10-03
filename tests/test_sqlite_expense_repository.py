@@ -1,11 +1,12 @@
 import sqlite3
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
 from pocketledger.domain.expense import Expense
+from pocketledger.domain.expense_repository import ExpenseNotFoundError
 from pocketledger.domain.expense_service import ExpenseService
 from pocketledger.persistence.sqlite_expense_repository import SQLiteExpenseRepository
 
@@ -102,6 +103,41 @@ def test_close_and_context_manager_close_connection(tmp_path):
         pass
     with pytest.raises(sqlite3.ProgrammingError):
         repository.list_expenses()
+
+
+def test_deletion_and_failed_deletion_persist_correctly_after_reopening(tmp_path):
+    path = tmp_path / "delete.sqlite"
+    expenses = [
+        Expense(name, Decimal("1.2300"), "Food", date(2024, 1, 1))
+        for name in ("First", "Middle", "Last")
+    ]
+    with SQLiteExpenseRepository(path) as repository:
+        for expense in expenses:
+            repository.add(expense)
+        repository.delete(expenses[1].id)
+        with pytest.raises(ExpenseNotFoundError):
+            repository.delete(uuid4())
+    with SQLiteExpenseRepository(path) as reopened:
+        remaining = reopened.list_expenses()
+        assert remaining == [expenses[0], expenses[2]]
+        assert all(expense.amount.as_tuple() == Decimal("1.2300").as_tuple() for expense in remaining)
+
+
+def test_unexpected_delete_database_error_propagates_and_rolls_back(tmp_path):
+    path = tmp_path / "failed-delete.sqlite"
+    expense = Expense("Lunch", Decimal("1"), "Food", date(2024, 1, 1))
+    with SQLiteExpenseRepository(path) as repository:
+        repository.add(expense)
+        with sqlite3.connect(path) as connection:
+            connection.execute(
+                "CREATE TRIGGER reject_delete BEFORE DELETE ON expenses "
+                "BEGIN SELECT RAISE(ABORT, 'blocked'); END"
+            )
+        with pytest.raises(sqlite3.IntegrityError, match="blocked"):
+            repository.delete(expense.id)
+        assert repository.list_expenses() == [expense]
+    with SQLiteExpenseRepository(path) as reopened:
+        assert reopened.list_expenses() == [expense]
 
 
 def test_context_manager_closes_connection_on_exception(tmp_path):

@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import UUID
 
 from pocketledger.domain.expense import Expense
-from pocketledger.domain.expense_repository import DuplicateExpenseError
+from pocketledger.domain.expense_repository import DuplicateExpenseError, ExpenseNotFoundError
 
 
 class SQLiteExpenseRepository:
@@ -65,6 +65,14 @@ class SQLiteExpenseRepository:
             )
             for row in rows
         ]
+
+    def delete(self, expense_id: UUID) -> None:
+        with self._connection:
+            cursor = self._connection.execute(
+                "DELETE FROM expenses WHERE id = ?", (str(expense_id),)
+            )
+            if cursor.rowcount == 0:
+                raise ExpenseNotFoundError(f"Expense {expense_id} does not exist")
 
     def close(self) -> None:
         self._connection.close()
