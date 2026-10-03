@@ -2,19 +2,19 @@
 
 An educational personal expense-tracking project for learning Python and working
 with Codex through small, reviewable software-engineering stages. The eventual
-desktop application will use PySide6 and SQLite.
+desktop application uses PySide6 and SQLite, alongside a terminal interface.
 
 Stage 1 established the scaffold and placeholder entry point. Stage 2 adds an
 immutable expense model and an in-memory service for adding and listing expenses,
 with domain tests. Stage 3 adds interchangeable in-memory and SQLite repositories.
 Stage 4 adds a terminal menu and wires the service to a local SQLite database.
 Stage 5 adds deletion by UUID through both repository implementations.
-There is no GUI.
+Stage 6 adds a simple PySide6 desktop interface while preserving the CLI.
 
 ## Development environment
 
-`environment.yml` defines the `PocketLedger` Conda environment with Python 3.12
-and pytest. For a new environment, run from the project root:
+`environment.yml` defines the `PocketLedger` Conda environment with Python 3.12,
+pytest, and PySide6. For a new environment, run from the project root:
 
 ```powershell
 conda env create -f environment.yml
@@ -48,6 +48,25 @@ python -m pocketledger
 Set `PYTHONPATH` again in each new terminal session. This makes the `src` package
 importable until packaging metadata is introduced in a later learning stage.
 
+To launch the GUI instead, from the same activated environment and project root:
+
+```powershell
+python -m pocketledger.gui
+```
+
+If upgrading an existing environment, run the `conda env update` command above to
+install PySide6 before launching the GUI or running the GUI tests. The CLI launcher
+does not import PySide6. Both interfaces use the same database when launched from
+the same working directory.
+
+The GUI provides description, amount, category, and date fields plus **Add expense**.
+Enter dates as `YYYY-MM-DD`; amounts use Decimal without automatic rounding.
+Validation errors appear below the buttons and retain form input. Successful additions
+reset the text fields, reset the date to today, and refresh the table. The read-only
+table shows expenses in insertion order. Select a row and click **Delete selected
+expense** to delete it by its internal UUID. No selection or an expense disappearing
+produces a message. Closing the window closes the database connection.
+
 The menu offers **1. Add expense**, **2. List expenses**, **3. Delete expense**,
 and **4. Exit**. Adding asks for
 description, decimal amount (e.g. `12.50`), category, and a valid date in exactly
@@ -79,17 +98,23 @@ python -m pytest
 
 Tests use injected input/output functions rather than human input. SQLite and
 application tests use temporary directories and do not write to project local data.
+GUI tests use one session-scoped `QApplication`, real PySide6 widgets, and programmatic
+button clicks. The `qapplication` fixture sets `QT_QPA_PLATFORM=offscreen` before
+creating the application, so no visible desktop or manual clicking is required.
+Normal GUI launches do not set this variable. No additional GUI testing library is needed.
 
 ## Structure
 
 - `src/pocketledger/app.py`: creates the data directory and wires repository, service, and CLI.
 - `src/pocketledger/__main__.py`: module entry point.
 - `src/pocketledger/ui/cli.py`: terminal menu, input conversion, and expense display.
+- `src/pocketledger/gui.py`: separate GUI launcher and SQLite wiring.
+- `src/pocketledger/ui/gui.py`: standard-widget form, expense table, and feedback.
 - `src/pocketledger/domain/expense.py`: immutable expense model and validation.
 - `src/pocketledger/domain/expense_service.py`: add/list/delete service with an injected repository.
 - `src/pocketledger/domain/expense_repository.py`: storage protocol and shared repository errors.
 - `src/pocketledger/persistence/`: in-memory and SQLite repository implementations.
-- `tests/`: domain, repository, CLI, application, and module entry-point tests.
+- `tests/`: domain, repository, CLI, GUI, application, and module entry-point tests.
 
 Application flow: `app.py` constructs `SQLiteExpenseRepository`, injects it into
 `ExpenseService`, and passes the service into `ExpenseCLI`. The CLI converts text
@@ -98,6 +123,13 @@ domain expenses and delegates storage to the repository. The CLI imports no SQLi
 and the domain imports neither UI nor repository implementations. The app owns the
 repository lifetime through a context manager. Packaging metadata and dependency
 locking are deferred to later stages.
+
+The GUI launcher constructs the same repository and service, then passes the service
+to `ExpenseWindow`: GUI -> ExpenseService -> ExpenseRepository -> SQLite implementation.
+Widgets perform no SQL and create no repositories. A snapshot of displayed expenses
+maps the selected row to a UUID; row numbers never reach the service or repository.
+The launcher keeps the repository context open through Qt's event loop and closes it
+on exit or startup failure. Domain and persistence code import no Qt or UI modules.
 
 ## Domain rules
 

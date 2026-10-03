@@ -25,6 +25,7 @@ venv/
 .env.*
 !.env.example
 /local-data/
+**/local-data/
 
 # Operating-system files
 .DS_Store
